@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Administrador QASO</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; margin: 0; }
+        /* Header */
+        .admin-header { background: #1e293b; color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .admin-header h1 { margin: 0; font-size: 1.2rem; }
+        .back-link { color: #94a3b8; text-decoration: none; font-size: 0.9rem; margin-right: 15px; }
+        .logout-btn { background: #ef4444; border: none; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+        
+        /* Container */
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+        
+        /* Controls */
+        .controls { display: flex; justify-content: space-between; margin-bottom: 1.5rem; }
+        .search-inp { padding: 0.7rem; width: 300px; border: 1px solid #cbd5e1; border-radius: 6px; }
+        .btn-add { background: #10b981; color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-add:hover { background: #059669; }
+
+        /* Table */
+        .table-box { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f8fafc; font-weight: 600; color: #475569; }
+        tr:hover { background: #f1f5f9; }
+        
+        /* Badges */
+        .badge { padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+        .bg-green { background: #dcfce7; color: #166534; }
+        .bg-red { background: #fee2e2; color: #991b1b; }
+        
+        /* Actions */
+        .btn-icon { border: none; background: none; cursor: pointer; font-size: 1.1rem; margin: 0 5px; }
+        .btn-edit { color: #3b82f6; }
+        .btn-del { color: #ef4444; }
+
+        /* Modal */
+        .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; justify-content:center; align-items:center; z-index:1000; }
+        .modal { background: white; width: 90%; max-width: 500px; padding: 2rem; border-radius: 8px; position:relative; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.9rem; }
+        .form-group input, .form-group select { width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; }
+        .row { display: flex; gap: 1rem; }
+        .btn-save { width: 100%; background: #2563eb; color: white; border: none; padding: 0.8rem; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+
+    <header class="admin-header">
+        <div style="display:flex; align-items:center; gap:10px">
+            <h1>⚙️ PANEL ADMINISTRADOR</h1>
+        </div>
+        <div>
+            <a href="index.html" class="back-link">Ir a la Tienda</a>
+            <button class="logout-btn" onclick="logout()">Salir</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="controls">
+            <input type="text" id="search" class="search-inp" placeholder="Buscar por código o nombre..." onkeyup="filterTable()">
+            <button class="btn-add" onclick="openModal()">+ NUEVO PRODUCTO</button>
+        </div>
+
+        <div class="table-box">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Precio</th>
+                        <th>Stock</th>
+                        <th>Grupo</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tBody">
+                    <tr><td colspan="6" style="text-align:center">Cargando inventario...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="prodModal" class="overlay">
+        <div class="modal">
+            <button onclick="closeModal()" style="position:absolute; top:15px; right:15px; border:none; background:none; font-size:1.2rem; cursor:pointer">&times;</button>
+            <h2 id="modalTitle">Nuevo Producto</h2>
+            <form id="prodForm" onsubmit="saveProduct(event)">
+                <input type="hidden" id="pId">
+                
+                <div class="row">
+                    <div class="form-group" style="flex:1">
+                        <label>Código *</label>
+                        <input type="text" id="pCode" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Grupo</label>
+                        <select id="pGroup">
+                            <option value="General">General</option>
+                            <option value="Alimentos">Alimentos</option>
+                            <option value="Bebidas">Bebidas</option>
+                            <option value="Limpieza">Limpieza</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Nombre del Producto *</label>
+                    <input type="text" id="pName" required>
+                </div>
+
+                <div class="row">
+                    <div class="form-group" style="flex:1">
+                        <label>Precio Venta ($) *</label>
+                        <input type="number" id="pPrice" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Unidad</label>
+                        <input type="text" id="pUnit" value="Unidad">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="form-group" style="flex:1">
+                        <label>Stock Actual *</label>
+                        <input type="number" id="pStock" step="0.01" required>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Stock Mínimo</label>
+                        <input type="number" id="pMin" value="5">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-save">GUARDAR DATOS</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API = 'api.php?action=';
+        let PRODUCTS = [];
+
+        window.onload = async () => {
+            // Verificar que sea ADMIN
+            const res = await fetch(API + 'check_session');
+            const data = await res.json();
+            if (!data.logged_in || data.role !== 'ADMIN') {
+                alert("Acceso Denegado. Debes ser Administrador.");
+                window.location.href = 'index.html';
+                return;
+            }
+            loadProducts();
+        };
+
+        async function loadProducts() {
+            const res = await fetch(API + 'get_catalog');
+            PRODUCTS = await res.json();
+            renderTable(PRODUCTS);
+        }
+
+        function renderTable(list) {
+            const tbody = document.getElementById('tBody');
+            if(list.length === 0) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No hay productos.</td></tr>'; return; }
+
+            tbody.innerHTML = list.map(p => `
+                <tr>
+                    <td><strong>${p.codigo}</strong></td>
+                    <td>${p.nombre}</td>
+                    <td>$${parseFloat(p.precio_venta).toFixed(2)}</td>
+                    <td>
+                        <span class="badge ${p.stock_actual > 0 ? 'bg-green' : 'bg-red'}">
+                            ${p.stock_actual} ${p.unidad}
+                        </span>
+                    </td>
+                    <td>${p.grupo || '-'}</td>
+                    <td>
+                        <button class="btn-icon btn-edit" onclick='editProduct(${JSON.stringify(p)})' title="Editar">✎</button>
+                        <button class="btn-icon btn-del" onclick="deleteProduct(${p.id})" title="Eliminar">🗑</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterTable() {
+            const term = document.getElementById('search').value.toLowerCase();
+            const filtered = PRODUCTS.filter(p => p.nombre.toLowerCase().includes(term) || p.codigo.toLowerCase().includes(term));
+            renderTable(filtered);
+        }
+
+        // --- CRUD ACTIONS ---
+
+        function openModal() {
+            document.getElementById('prodForm').reset();
+            document.getElementById('pId').value = '';
+            document.getElementById('modalTitle').innerText = "Nuevo Producto";
+            document.getElementById('prodModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('prodModal').style.display = 'none';
+        }
+
+        function editProduct(p) {
+            document.getElementById('pId').value = p.id;
+            document.getElementById('pCode').value = p.codigo;
+            document.getElementById('pName').value = p.nombre;
+            document.getElementById('pPrice').value = p.precio_venta;
+            document.getElementById('pStock').value = p.stock_actual;
+            document.getElementById('pUnit').value = p.unidad;
+            document.getElementById('pGroup').value = p.grupo || 'General';
+            document.getElementById('pMin').value = p.stock_min || 0;
+            
+            document.getElementById('modalTitle').innerText = "Editar Producto";
+            document.getElementById('prodModal').style.display = 'flex';
+        }
+
+        async function saveProduct(e) {
+            e.preventDefault();
+            const id = document.getElementById('pId').value;
+            
+            const payload = {
+                id: id ? id : null,
+                codigo: document.getElementById('pCode').value,
+                nombre: document.getElementById('pName').value,
+                precio_venta: document.getElementById('pPrice').value,
+                stock_actual: document.getElementById('pStock').value,
+                unidad: document.getElementById('pUnit').value,
+                grupo: document.getElementById('pGroup').value,
+                stock_min: document.getElementById('pMin').value
+            };
+
+            try {
+                const res = await fetch(API + 'admin_save_product', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert(data.message);
+                    closeModal();
+                    loadProducts();
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (err) { alert("Error de conexión"); }
+        }
+
+        async function deleteProduct(id) {
+            if(!confirm("¿ESTÁS SEGURO?\nSe borrará el producto y su historial de movimientos.\nEsta acción no se puede deshacer.")) return;
+
+            try {
+                const res = await fetch(API + 'admin_delete_product', {
+                    method: 'POST',
+                    body: JSON.stringify({ id: id })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    loadProducts();
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (err) { alert("Error de conexión"); }
+        }
+
+        async function logout() {
+            await fetch(API + 'logout');
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>
