@@ -6,6 +6,7 @@
     <title>Panel Administrador QASO</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; margin: 0; }
+        
         /* Header */
         .admin-header { background: #1e293b; color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
         .admin-header h1 { margin: 0; font-size: 1.2rem; }
@@ -148,24 +149,30 @@
             // Verificar que sea ADMIN
             const res = await fetch(API + 'check_session');
             const data = await res.json();
+            
+            // CORRECCIÓN: Si no es admin, redirige a index.php (no index.html)
             if (!data.logged_in || data.role !== 'ADMIN') {
                 alert("Acceso Denegado. Debes ser Administrador.");
-                window.location.href = 'index.html';
+                window.location.href = 'index.php';
                 return;
             }
             loadProducts();
         };
 
         async function loadProducts() {
-            const res = await fetch(API + 'get_catalog');
-            PRODUCTS = await res.json();
-            renderTable(PRODUCTS);
+            try {
+                const res = await fetch(API + 'get_catalog');
+                PRODUCTS = await res.json();
+                renderTable(PRODUCTS);
+            } catch(e) { console.error("Error cargando productos"); }
         }
 
         function renderTable(list) {
             const tbody = document.getElementById('tBody');
-            if(list.length === 0) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No hay productos.</td></tr>'; return; }
-
+            if(list.length === 0) { 
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No hay productos.</td></tr>'; 
+                return; 
+            }
             tbody.innerHTML = list.map(p => `
                 <tr>
                     <td><strong>${p.codigo}</strong></td>
@@ -192,7 +199,6 @@
         }
 
         // --- CRUD ACTIONS ---
-
         function openModal() {
             document.getElementById('prodForm').reset();
             document.getElementById('pId').value = '';
@@ -252,7 +258,6 @@
 
         async function deleteProduct(id) {
             if(!confirm("¿ESTÁS SEGURO?\nSe borrará el producto y su historial de movimientos.\nEsta acción no se puede deshacer.")) return;
-
             try {
                 const res = await fetch(API + 'admin_delete_product', {
                     method: 'POST',
