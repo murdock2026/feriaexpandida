@@ -9,29 +9,33 @@ header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Cache-Control: no-store, no-cache, must-revalidate");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
 
 require_once 'db.php'; // Asegúrate de que este archivo tenga tus claves de BD
 
 // --- 2. CONFIGURACIÓN DEL PUENTE (TU URL GENERADA) ---
+// NOTA: Esta URL es privada, cuidado al compartir el código.
 define('GOOGLE_BRIDGE_URL', 'https://script.google.com/macros/s/AKfycbyIufDyIiPjXIRJdWsRVfVWK2NaRhYEQNoow0PTHUZbwMchN3EqUto9J582dyteYpVb/exec');
 
 // --- 3. FUNCIÓN DE ENVÍO VÍA GOOGLE ---
 function enviarNotificacion($mensaje) {
     // Preparamos los datos que Google Script espera recibir
     $data = json_encode(['mensaje' => $mensaje]);
-
+    
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, GOOGLE_BRIDGE_URL);
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Seguir redirecciones de Google
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Vital para InfinityFree
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); 
     
     // Google necesita saber que le enviamos JSON
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-
+    
     $res = curl_exec($ch);
     curl_close($ch);
     return $res;
@@ -48,7 +52,6 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
 
     // --- AUTENTICACIÓN ---
-
     if ($action === 'check_session') {
         jsonResponse([
             'logged_in' => isset($_SESSION['user_id']),
@@ -77,8 +80,10 @@ try {
 
     if ($action === 'register' && $method === 'POST') {
         $in = json_decode(file_get_contents('php://input'), true);
-        $u = trim($in['username']??''); $p = $in['password']??'';
-        if (strlen($u)<3 || strlen($p)<4) throw new Exception("Usuario (min 3) o Pass (min 4) muy cortos");
+        $u = trim($in['username'] ?? '');
+        $p = $in['password'] ?? '';
+        
+        if (strlen($u) < 3 || strlen($p) < 4) throw new Exception("Usuario (min 3) o Pass (min 4) muy cortos");
         
         try {
             $hash = password_hash($p, PASSWORD_DEFAULT);
@@ -91,10 +96,12 @@ try {
         }
     }
 
-    if ($action === 'logout') { session_destroy(); jsonResponse(['status' => 'success']); }
+    if ($action === 'logout') {
+        session_destroy();
+        jsonResponse(['status' => 'success']);
+    }
 
     // --- TIENDA ---
-
     if ($action === 'get_catalog') {
         // Admin ve todo, Cliente solo stock disponible
         $sql = "SELECT codigo, nombre, stock_actual, precio_venta, unidad FROM products WHERE stock_actual > 0";
@@ -106,7 +113,7 @@ try {
 
     // --- PROCESAR COMPRA (CON NOTIFICACIÓN) ---
     if ($action === 'registrar_movimiento' && $method === 'POST') {
-        if (!isset($_SESSION['user_id'])) jsonResponse(['status'=>'error', 'message'=>'Inicia sesión para comprar'], 401);
+        if (!isset($_SESSION['user_id'])) jsonResponse(['status' => 'error', 'message' => 'Inicia sesión para comprar'], 401);
         
         $in = json_decode(file_get_contents('php://input'), true);
         $codigo = $in['codigo'] ?? '';
@@ -127,7 +134,8 @@ try {
         $prod = $stmt->fetch();
 
         if (!$prod || $prod['stock_actual'] < $cantidad) {
-            $pdo->rollBack(); throw new Exception("Stock insuficiente o agotado");
+            $pdo->rollBack();
+            throw new Exception("Stock insuficiente o agotado");
         }
 
         // 2. Calcular
@@ -144,15 +152,17 @@ try {
         $pdo->commit();
 
         // 5. ENVIAR A TELEGRAM (VÍA GOOGLE)
+        // Usamos etiquetas HTML simples que Telegram soporta (b, i, u, pre)
         $msg = "🚀 <b>¡NUEVO PEDIDO CONFIRMADO!</b>\n\n";
         $msg .= "👤 <b>Cliente:</b> " . $_SESSION['username'] . "\n";
         $msg .= "📦 <b>Producto:</b> " . $prod['nombre'] . "\n";
-        $msg .= "🔢 <b>Cantidad:</b> " . $cantidad . " " . ($prod['unidad']??'u') . "\n";
+        $msg .= "🔢 <b>Cantidad:</b> " . $cantidad . " " . ($prod['unidad'] ?? 'u') . "\n";
         $msg .= "💰 <b>Total:</b> $" . number_format($total, 2) . "\n";
         $msg .= "--------------------------------\n";
         $msg .= "📍 <b>Dirección:</b> " . $direccion . "\n";
         $msg .= "📞 <b>Contacto:</b> " . $telefono;
 
+        // Llamamos a la función del puente
         enviarNotificacion($msg);
 
         jsonResponse(['status' => 'success', 'message' => 'Pedido confirmado. Te contactaremos pronto.']);
@@ -161,6 +171,7 @@ try {
     // --- HISTORIAL ---
     if ($action === 'get_my_purchases') {
         if (!isset($_SESSION['user_id'])) jsonResponse([], 401);
+        
         $stmt = $pdo->prepare("SELECT m.fecha, p.nombre as producto, m.cantidad, m.valor_total FROM movements m JOIN products p ON m.product_id = p.id WHERE m.user_id = ? AND m.tipo='SALIDA' ORDER BY m.fecha DESC");
         $stmt->execute([$_SESSION['user_id']]);
         jsonResponse($stmt->fetchAll());
@@ -168,10 +179,12 @@ try {
 
     // --- ADMIN ---
     if ($action === 'admin_save_product' && $method === 'POST') {
-        if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') jsonResponse(['status'=>'error'], 403);
+        if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') jsonResponse(['status' => 'error'], 403);
+        
         $in = json_decode(file_get_contents('php://input'), true);
         $id = $in['id'] ?? null;
-        if($id){
+
+        if ($id) {
             $pdo->prepare("UPDATE products SET codigo=?, nombre=?, unidad=?, grupo=?, stock_actual=?, precio_venta=?, stock_min=? WHERE id=?")
                 ->execute([$in['codigo'], $in['nombre'], $in['unidad'], $in['grupo'], $in['stock_actual'], $in['precio_venta'], $in['stock_min'], $id]);
         } else {
@@ -182,10 +195,13 @@ try {
     }
 
     if ($action === 'admin_delete_product' && $method === 'POST') {
-        if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') jsonResponse(['status'=>'error'], 403);
+        if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') jsonResponse(['status' => 'error'], 403);
+        
         $in = json_decode(file_get_contents('php://input'), true);
+        
         $pdo->prepare("DELETE FROM movements WHERE product_id = ?")->execute([$in['id']]);
         $pdo->prepare("DELETE FROM products WHERE id = ?")->execute([$in['id']]);
+        
         jsonResponse(['status' => 'success', 'message' => 'Eliminado']);
     }
 
