@@ -185,4 +185,15 @@ try {
                 ->execute([$input['codigo'], $input['nombre'], $input['unidad'], $input['grupo'], $input['stock_actual'], $input['precio_venta'], $input['stock_min'], $id]);
         } else {
             $pdo->prepare("INSERT INTO products (codigo, nombre, unidad, grupo, stock_actual, precio_venta, stock_min) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                ->execute([$input['codigo'], $
+                ->execute([$input['codigo'], 
+                          $input['nombre'],
+                          $input['unidad'],
+                          $input['grupo'],
+                          $input['stock_actual'],
+                          $input['precio_venta'],
+                          $input['stock_min']
+                ]);
+    }
+    jsonResponse(['status' => 'success', 'message' => 'Guardado']);
+}
+
