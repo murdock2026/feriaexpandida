@@ -174,26 +174,56 @@ try {
     }
 
     // --- PANEL ADMIN ---
-    $isAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'ADMIN');
+$isAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'ADMIN');
 
-    if ($action === 'admin_save_product' && $method === 'POST') {
-        if (!$isAdmin) jsonResponse(['status' => 'error', 'message' => 'No autorizado'], 403);
+if ($action === 'admin_save_product' && $method === 'POST') {
+    if (!$isAdmin) jsonResponse(['status' => 'error', 'message' => 'No autorizado'], 403);
 
-        $id = $input['id'] ?? null;
-        if ($id) {
-            $pdo->prepare("UPDATE products SET codigo=?, nombre=?, unidad=?, grupo=?, stock_actual=?, precio_venta=?, stock_min=? WHERE id=?")
-                ->execute([$input['codigo'], $input['nombre'], $input['unidad'], $input['grupo'], $input['stock_actual'], $input['precio_venta'], $input['stock_min'], $id]);
-        } else {
-            $pdo->prepare("INSERT INTO products (codigo, nombre, unidad, grupo, stock_actual, precio_venta, stock_min) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                ->execute([$input['codigo'], 
-                          $input['nombre'],
-                          $input['unidad'],
-                          $input['grupo'],
-                          $input['stock_actual'],
-                          $input['precio_venta'],
-                          $input['stock_min']
-                ]);
+    $id = $input['id'] ?? null;
+    if ($id) {
+        $pdo->prepare("UPDATE products SET codigo=?, nombre=?, unidad=?, grupo=?, stock_actual=?, precio_venta=?, stock_min=? WHERE id=?")
+            ->execute([
+                $input['codigo'],
+                $input['nombre'],
+                $input['unidad'],
+                $input['grupo'],
+                $input['stock_actual'],
+                $input['precio_venta'],
+                $input['stock_min'],
+                $id
+            ]);
+    } else {
+        $pdo->prepare("INSERT INTO products (codigo, nombre, unidad, grupo, stock_actual, precio_venta, stock_min) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            ->execute([
+                $input['codigo'], 
+                $input['nombre'],
+                $input['unidad'],
+                $input['grupo'],
+                $input['stock_actual'],
+                $input['precio_venta'],
+                $input['stock_min']
+            ]);
     }
     jsonResponse(['status' => 'success', 'message' => 'Guardado']);
+}
+
+if ($action === 'admin_delete_product' && $method === 'POST') {
+    if (!$isAdmin) jsonResponse(['status' => 'error', 'message' => 'No autorizado'], 403);
+    $id = $input['id'];
+    $pdo->prepare("DELETE FROM movements WHERE product_id = ?")->execute([$id]);
+    $pdo->prepare("DELETE FROM products WHERE id = ?")->execute([$id]);
+    jsonResponse(['status' => 'success', 'message' => 'Eliminado']);
+}
+
+// Si ninguna acción coincide
+throw new Exception("Acción desconocida");
+
+} catch (Exception $e) {
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    http_response_code(500);
+    echo json_encode([
+        'status' => 'error',
+        'message' => $e->getMessage()
+    ]);
 }
 
