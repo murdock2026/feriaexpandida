@@ -1,6 +1,7 @@
 <?php
-// api.php - QASO SYSTEM v7.0 (Google Bridge Integration)
-// Configuración final para Koyeb + TiDB + Google Apps Script
+// api.php - QASO SYSTEM v7.0
+// Integración Koyeb + TiDB + Telegram Bot
+// Autor: Malevo7bot
 
 session_start();
 header('Content-Type: application/json; charset=utf-8');
@@ -17,31 +18,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once 'db.php'; // Conexión a TiDB
+require_once 'db.php'; // Conexión a TiDB vía PDO
 
-// --- 2. CONFIGURACIÓN DEL PUENTE (TU URL) ---
-// Esta es la URL que generaste en Google Apps Script
-define('GOOGLE_BRIDGE_URL', 'https://script.google.com/macros/s/AKfycbwIuQNgcPcc3Pbcg0nRRe3u0ouZv_UHLlwtT1eKL_HubtfNQYwqXuIJqN0LzEF955PZ/exec');
+// --- 2. CONFIGURACIÓN TELEGRAM ---
+define('TELEGRAM_TOKEN', '8208570099:AAHAcVK2qutaQTQahhaapIWhVSqVPSpzhWA');
+define('TELEGRAM_CHAT_ID', '1887694439');
 
 // --- 3. FUNCIONES AUXILIARES ---
-
 function enviarNotificacion($mensaje) {
-    // Si la URL está vacía, no enviamos nada
-    if (!defined('GOOGLE_BRIDGE_URL') || empty(GOOGLE_BRIDGE_URL)) return;
+    if (empty(TELEGRAM_TOKEN) || empty(TELEGRAM_CHAT_ID)) return;
 
-    $data = json_encode(['mensaje' => $mensaje]);
-    
+    $url = "https://api.telegram.org/bot" . TELEGRAM_TOKEN . "/sendMessage";
+    $data = [
+        'chat_id' => TELEGRAM_CHAT_ID,
+        'text' => $mensaje,
+        'parse_mode' => 'HTML'
+    ];
+
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, GOOGLE_BRIDGE_URL);
+    curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Evita errores de certificado en CURL
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    
     $res = curl_exec($ch);
     curl_close($ch);
+
     return $res;
 }
 
@@ -52,12 +53,9 @@ function jsonResponse($data, $code = 200) {
 }
 
 // --- 4. LÓGICA PRINCIPAL ---
-
 try {
     $action = $_GET['action'] ?? '';
     $method = $_SERVER['REQUEST_METHOD'];
-    
-    // Leer JSON de entrada
     $inputJSON = file_get_contents('php://input');
     $input = json_decode($inputJSON, true);
 
@@ -92,7 +90,7 @@ try {
         $u = trim($input['username'] ?? '');
         $p = $input['password'] ?? '';
         if (strlen($u) < 3 || strlen($p) < 4) throw new Exception("Mínimo 3 caracteres usuario, 4 pass");
-        
+
         try {
             $hash = password_hash($p, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, 'PUBLIC')");
@@ -118,10 +116,10 @@ try {
         jsonResponse($pdo->query($sql)->fetchAll());
     }
 
-    // --- COMPRA CON TELEGRAM ---
+    // --- COMPRA ---
     if ($action === 'registrar_movimiento' && $method === 'POST') {
         if (!isset($_SESSION['user_id'])) jsonResponse(['status' => 'error', 'message' => 'Sesión requerida'], 401);
-        
+
         $codigo = $input['codigo'] ?? '';
         $cantidad = floatval($input['cantidad'] ?? 0);
         $telefono = $input['telefono'] ?? '-';
@@ -131,7 +129,6 @@ try {
 
         $pdo->beginTransaction();
 
-        // Verificar stock y bloquear fila
         $stmt = $pdo->prepare("SELECT id, nombre, stock_actual, precio_venta, unidad FROM products WHERE codigo = ? FOR UPDATE");
         $stmt->execute([$codigo]);
         $prod = $stmt->fetch();
@@ -141,26 +138,25 @@ try {
             throw new Exception("Stock insuficiente");
         }
 
-        // Actualizar DB
         $newStock = $prod['stock_actual'] - $cantidad;
         $total = $cantidad * $prod['precio_venta'];
         $pdo->prepare("UPDATE products SET stock_actual = ? WHERE id = ?")->execute([$newStock, $prod['id']]);
-        
+
         $contacto = "Tel: $telefono | Dir: $direccion";
         $pdo->prepare("INSERT INTO movements (product_id, user_id, tipo, cantidad, precio_unitario, valor_total, datos_contacto, observaciones) VALUES (?, ?, 'SALIDA', ?, ?, ?, ?, 'Web')")
             ->execute([$prod['id'], $_SESSION['user_id'], $cantidad, $prod['precio_venta'], $total, $contacto]);
 
         $pdo->commit();
 
-        // Enviar a Telegram
+        // Notificación Telegram
         $msg = "🚀 <b>¡NUEVA VENTA!</b>\n\n";
         $msg .= "👤 <b>Cliente:</b> " . $_SESSION['username'] . "\n";
         $msg .= "📦 <b>Producto:</b> " . $prod['nombre'] . "\n";
-        $msg .= "🔢 <b>Cant:</b> " . $cantidad . " " . ($prod['unidad']??'u') . "\n";
+        $msg .= "🔢 <b>Cant:</b> " . $cantidad . " " . ($prod['unidad'] ?? 'u') . "\n";
         $msg .= "💰 <b>Total:</b> $" . number_format($total, 2) . "\n";
         $msg .= "📍 <b>Envío:</b> " . $direccion . "\n";
         $msg .= "📞 <b>Tel:</b> " . $telefono;
-        
+
         enviarNotificacion($msg);
 
         jsonResponse(['status' => 'success', 'message' => 'Compra exitosa']);
@@ -168,7 +164,11 @@ try {
 
     if ($action === 'get_my_purchases') {
         if (!isset($_SESSION['user_id'])) jsonResponse([], 401);
-        $stmt = $pdo->prepare("SELECT m.fecha, p.nombre as producto, m.cantidad, m.valor_total FROM movements m JOIN products p ON m.product_id = p.id WHERE m.user_id = ? AND m.tipo='SALIDA' ORDER BY m.fecha DESC");
+        $stmt = $pdo->prepare("SELECT m.fecha, p.nombre as producto, m.cantidad, m.valor_total 
+                               FROM movements m 
+                               JOIN products p ON m.product_id = p.id 
+                               WHERE m.user_id = ? AND m.tipo='SALIDA' 
+                               ORDER BY m.fecha DESC");
         $stmt->execute([$_SESSION['user_id']]);
         jsonResponse($stmt->fetchAll());
     }
@@ -178,31 +178,11 @@ try {
 
     if ($action === 'admin_save_product' && $method === 'POST') {
         if (!$isAdmin) jsonResponse(['status' => 'error', 'message' => 'No autorizado'], 403);
-        
+
         $id = $input['id'] ?? null;
         if ($id) {
             $pdo->prepare("UPDATE products SET codigo=?, nombre=?, unidad=?, grupo=?, stock_actual=?, precio_venta=?, stock_min=? WHERE id=?")
                 ->execute([$input['codigo'], $input['nombre'], $input['unidad'], $input['grupo'], $input['stock_actual'], $input['precio_venta'], $input['stock_min'], $id]);
         } else {
             $pdo->prepare("INSERT INTO products (codigo, nombre, unidad, grupo, stock_actual, precio_venta, stock_min) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                ->execute([$input['codigo'], $input['nombre'], $input['unidad'], $input['grupo'], $input['stock_actual'], $input['precio_venta'], $input['stock_min']]);
-        }
-        jsonResponse(['status' => 'success', 'message' => 'Guardado']);
-    }
-
-    if ($action === 'admin_delete_product' && $method === 'POST') {
-        if (!$isAdmin) jsonResponse(['status' => 'error', 'message' => 'No autorizado'], 403);
-        $id = $input['id'];
-        $pdo->prepare("DELETE FROM movements WHERE product_id = ?")->execute([$id]);
-        $pdo->prepare("DELETE FROM products WHERE id = ?")->execute([$id]);
-        jsonResponse(['status' => 'success', 'message' => 'Eliminado']);
-    }
-
-    throw new Exception("Acción desconocida");
-
-} catch (Exception $e) {
-    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-}
-?>
+                ->execute([$input['codigo'], $
